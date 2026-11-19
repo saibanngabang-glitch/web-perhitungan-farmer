@@ -1,0 +1,1087 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Hitung nilai seed dalam WL dan bagi otomatis ke modal lagi, owner, dan worker.">
+<title>Seed Profit Distribution</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=DM+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* reset dasar untuk hosting mandiri */
+:root{color-scheme:light}
+body{margin:0}
+[hidden]{display:none!important}
+</style>
+<style>
+/* Layout: dua kolom di desktop. Kiri = input (seed, rate, biaya). Kanan = satu kartu hasil (total WL, tiga alokasi dengan persentase yang bisa diubah, simpan). Riwayat dengan tab di bawah, selebar penuh. Satu kolom di ponsel. */
+:root{
+  --font-display:"Bricolage Grotesque","DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-body:"DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --bg:#EDF1F5; --surface:#FFFFFF; --surface-2:#F3F6F9; --ink:#12202C; --muted:#566878; --line:#D3DCE5;
+  --accent:#2456E6; --accent-soft:#E4ECFD; --on-accent:#FFFFFF;
+  --c-modal:#0E8F8A; --c-owner:#C27A0A; --c-worker:#6B4FD8;
+  --good:#17803D; --good-soft:#DFF3E6; --warn:#9A4A06; --warn-soft:#FDEBD3; --bad:#B3202A; --bad-soft:#FBE1E3;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E161E; --surface:#16212B; --surface-2:#1B2733; --ink:#E6EDF3; --muted:#94A5B4; --line:#2C3A48;
+    --accent:#7DA0FF; --accent-soft:#1F2E57; --on-accent:#0B1424;
+    --c-modal:#3CC4BE; --c-owner:#EBA843; --c-worker:#A895FF;
+    --good:#55C985; --good-soft:#14301F; --warn:#EDB25A; --warn-soft:#3A2A12; --bad:#FF858B; --bad-soft:#3B1A1D;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E161E; --surface:#16212B; --surface-2:#1B2733; --ink:#E6EDF3; --muted:#94A5B4; --line:#2C3A48;
+  --accent:#7DA0FF; --accent-soft:#1F2E57; --on-accent:#0B1424;
+  --c-modal:#3CC4BE; --c-owner:#EBA843; --c-worker:#A895FF;
+  --good:#55C985; --good-soft:#14301F; --warn:#EDB25A; --warn-soft:#3A2A12; --bad:#FF858B; --bad-soft:#3B1A1D;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:15px; line-height:1.5;
+  padding-block:24px 56px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap{max-width:1120px; margin:0 auto}
+h1,h2,h3{font-family:var(--font-display); letter-spacing:-.01em; text-wrap:balance; margin:0}
+h1{font-size:clamp(1.65rem,4.6vw,2.3rem); line-height:1.1; letter-spacing:-.02em}
+h2{font-size:1.2rem; line-height:1.25}
+h3{font-size:1rem; line-height:1.3}
+p{margin:0}
+.top{display:flex; flex-wrap:wrap; gap:16px 24px; align-items:flex-end; justify-content:space-between; margin-bottom:20px}
+.lede{color:var(--muted); max-width:56ch; margin-top:6px}
+
+.seg{display:inline-flex; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; padding:3px; gap:3px}
+.seg button{font:inherit; font-weight:600; min-height:40px; padding:0 16px; border:0; border-radius:9px; background:transparent; color:var(--muted); cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent); color:var(--on-accent)}
+
+.layout{display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); gap:20px; align-items:start}
+.col{display:grid; gap:20px; min-width:0}
+@media (max-width:880px){.layout{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:20px; min-width:0}
+.card-head{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:baseline; justify-content:space-between; margin-bottom:14px}
+.sub{color:var(--muted); font-size:.88rem}
+
+.lbl{display:block; font-weight:600; font-size:.85rem; margin-bottom:6px}
+.hint{font-size:.8rem; color:var(--muted); margin-top:6px}
+.err{font-size:.82rem; color:var(--bad); margin-top:6px; min-height:0}
+.err:empty{display:none}
+.field{margin-bottom:16px}
+.field:last-child{margin-bottom:0}
+input[type="text"],input[type="password"]{
+  font:inherit; font-size:16px; color:var(--ink); background:var(--surface); border:1px solid var(--line);
+  border-radius:10px; padding:10px 12px; min-height:44px; width:100%; min-width:0; font-variant-numeric:tabular-nums;
+}
+input[type="text"].bad{border-color:var(--bad)}
+input[type="radio"]{accent-color:var(--accent); width:18px; height:18px; margin:0}
+input:focus-visible,button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+.rates{display:grid; gap:10px; margin-top:8px}
+.rate{border:1px solid var(--line); border-radius:12px; padding:12px; background:var(--surface)}
+.rate.on{border-color:var(--accent); background:var(--accent-soft)}
+.rate-head{display:flex; align-items:center; gap:10px; font-weight:600; cursor:pointer; margin-bottom:10px}
+.pill{margin-left:auto; font-size:.7rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent)}
+.rate:not(.on) .pill{display:none}
+.rate-eq{display:flex; align-items:center; gap:8px}
+.rate-eq input{flex:1 1 0}
+.rate-eq span{color:var(--muted); white-space:nowrap}
+.rate-per{font-size:.8rem; color:var(--muted); margin-top:8px}
+
+.btn{font:inherit; font-weight:600; min-height:44px; padding:0 16px; border-radius:10px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer}
+.btn:hover{background:var(--surface-2)}
+.btn-primary{background:var(--accent); color:var(--on-accent); border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent); filter:brightness(1.08)}
+.btn-small{min-height:36px; padding:0 12px; font-size:.85rem}
+.btn-danger{color:var(--bad)}
+.btn[disabled]{opacity:.45; cursor:not-allowed; filter:none}
+.row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.row-gap{margin-top:14px}
+
+.eyebrow{font-size:.72rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted)}
+.hero{background:var(--surface-2); border-radius:12px; padding:16px; margin-bottom:14px}
+.hero-num{font-family:var(--font-display); font-size:clamp(2.2rem,8vw,3.3rem); line-height:1.05; margin:6px 0 4px; font-weight:700; font-variant-numeric:tabular-nums; overflow-wrap:anywhere}
+.hero-sub{color:var(--muted); font-size:.88rem}
+.note{background:var(--accent-soft); border-radius:12px; padding:12px 14px; font-size:.88rem; margin-bottom:14px}
+.note .btn{margin-top:10px}
+.warn{background:var(--warn-soft); color:var(--warn); border-radius:12px; padding:10px 14px; font-size:.88rem; margin-bottom:14px; font-weight:500}
+
+.flow{display:grid; gap:0; margin:0 0 14px; font-variant-numeric:tabular-nums}
+.flow div{display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px dashed var(--line); font-size:.9rem}
+.flow dt{color:var(--muted)}
+.flow dd{margin:0; font-weight:600; text-align:right}
+.flow .total{border-bottom:0; padding-top:10px}
+.flow .total dt{color:var(--ink); font-weight:700}
+.flow .zero dd{color:var(--muted); font-weight:500}
+
+.bar{display:flex; height:12px; border-radius:6px; overflow:hidden; background:var(--line); margin:12px 0}
+.bar i{display:block; height:100%; transition:width .25s ease}
+.alloc{display:grid; gap:8px}
+.arow{display:grid; grid-template-columns:minmax(0,1fr) 7.5rem minmax(6.5rem,auto); align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:var(--surface)}
+.aname{display:flex; align-items:center; gap:10px; min-width:0}
+.aname b{display:block; line-height:1.2}
+.aname small{color:var(--muted); font-size:.78rem}
+.dot{width:12px; height:12px; border-radius:4px; flex:none}
+.pctbox{position:relative}
+.pctbox input{padding-right:28px; text-align:right}
+.pctbox span{position:absolute; right:11px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none}
+.amt{text-align:right; font-weight:700; font-size:1.05rem; font-variant-numeric:tabular-nums; overflow-wrap:anywhere}
+@media (max-width:480px){
+  .arow{grid-template-columns:7rem minmax(0,1fr)}
+  .aname{grid-column:1 / -1}
+}
+.status{display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:.86rem; padding:5px 11px; border-radius:999px}
+.status.good{background:var(--good-soft); color:var(--good)}
+.status.bad{background:var(--bad-soft); color:var(--bad)}
+.status.neutral{background:var(--surface-2); color:var(--muted)}
+.cfg{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; justify-content:space-between; margin:12px 0}
+.divider{border:0; border-top:1px solid var(--line); margin:16px 0}
+.savebox{display:grid; gap:10px}
+.kas{font-size:.88rem; color:var(--muted); margin-top:12px}
+.kas b{color:var(--ink); font-variant-numeric:tabular-nums}
+
+.hist{margin-top:20px}
+.tabs{display:flex; gap:4px; border-bottom:1px solid var(--line); margin:14px 0 16px; overflow-x:auto}
+.tabs button{font:inherit; font-weight:600; border:0; background:none; padding:10px 14px; color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; cursor:pointer; white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--ink); border-bottom-color:var(--accent)}
+.list{display:grid; gap:10px}
+.entry{border:1px solid var(--line); border-radius:12px; padding:14px; background:var(--surface); display:grid; gap:8px; min-width:0}
+.entry-top{display:flex; flex-wrap:wrap; gap:4px 12px; justify-content:space-between; align-items:baseline}
+.entry-title{font-weight:700; overflow-wrap:anywhere}
+.entry-date{color:var(--muted); font-size:.82rem}
+.entry-line{font-size:.9rem; color:var(--muted); font-variant-numeric:tabular-nums; overflow-wrap:anywhere}
+.chips{display:flex; flex-wrap:wrap; gap:6px}
+.chip{display:inline-flex; align-items:center; gap:7px; font-size:.82rem; padding:4px 10px; border-radius:999px; background:var(--surface-2); border:1px solid var(--line); font-variant-numeric:tabular-nums}
+.chip .dot{width:9px; height:9px; border-radius:3px}
+.tag{font-size:.72rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:2px 8px; border-radius:6px; background:var(--accent-soft); color:var(--accent)}
+.totals{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:14px}
+.tot{background:var(--surface-2); border-radius:12px; padding:12px 14px}
+.tot b{display:block; font-family:var(--font-display); font-size:1.3rem; font-variant-numeric:tabular-nums; overflow-wrap:anywhere}
+.empty{border:1px dashed var(--line); border-radius:12px; padding:22px; text-align:center; color:var(--muted)}
+.delta-up{color:var(--good); font-weight:600}
+.delta-down{color:var(--bad); font-weight:600}
+.foot{color:var(--muted); font-size:.8rem; margin-top:18px}
+
+.toast{
+  position:fixed; left:50%; transform:translateX(-50%) translateY(20px); bottom:calc(16px + env(safe-area-inset-bottom, 0px));
+  background:var(--ink); color:var(--bg); padding:10px 16px; border-radius:10px; font-weight:600; font-size:.9rem;
+  opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; max-width:calc(100% - 32px); z-index:20; text-align:center;
+}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+@media (prefers-reduced-motion:reduce){ .bar i,.toast{transition:none} }
+.syncbar{display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 14px; margin-bottom:20px}
+.sync-main{display:flex; align-items:center; gap:10px; flex:1 1 280px; min-width:0; font-size:.9rem}
+.sync-dot{width:10px; height:10px; border-radius:50%; flex:none; background:var(--muted)}
+.sync-dot.s-ok{background:var(--good)}
+.sync-dot.s-view{background:var(--accent)}
+.sync-dot.s-local{background:var(--warn)}
+.sync-dot.s-bad{background:var(--bad)}
+.sync-form{display:flex; flex-wrap:wrap; align-items:center; gap:8px}
+.sync-form input[type="password"]{width:12.5rem}
+.remember{display:flex; align-items:center; gap:6px; font-size:.82rem; color:var(--muted)}
+.remember input{width:16px; height:16px; margin:0; accent-color:var(--accent)}
+.sr{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
+.syncbar .err{flex-basis:100%; margin:0}
+.day{display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 12px; margin:20px 0 8px}
+.day h3{font-size:.95rem}
+.entry-date{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Seed Profit Distribution</h1>
+      <p class="lede">Masukkan jumlah seed dan rate. Nilai WL dan pembagian ke modal lagi, owner, dan worker dihitung otomatis.</p>
+    </div>
+    <div class="seg" role="group" aria-label="Mode perhitungan">
+      <button type="button" data-mode="simple" aria-pressed="true">Sederhana</button>
+      <button type="button" data-mode="adv" aria-pressed="false">Lanjutan</button>
+    </div>
+  </header>
+
+  <div class="syncbar" id="syncbar">
+    <div class="sync-main"><span class="sync-dot s-load" id="sync-dot"></span><span id="sync-text">Menghubungkan ke GitHub...</span></div>
+    <form class="sync-form" id="unlock-form" hidden>
+      <label class="sr" for="pw">Kata sandi owner</label>
+      <input type="password" id="pw" autocomplete="current-password" placeholder="Kata sandi owner">
+      <label class="remember"><input type="checkbox" id="pw-remember"> Ingat di perangkat ini</label>
+      <button type="submit" class="btn btn-primary btn-small">Buka kunci</button>
+    </form>
+    <div class="row">
+      <button type="button" class="btn btn-small" id="btn-refresh" hidden>Muat ulang</button>
+      <button type="button" class="btn btn-small" id="btn-lock" hidden>Kunci lagi</button>
+    </div>
+    <p class="err" id="pw-err" role="alert"></p>
+  </div>
+
+  <div class="layout">
+    <div class="col">
+      <section class="card" aria-labelledby="h-input">
+        <div class="card-head"><h2 id="h-input">Seed dan rate</h2><span class="sub">Rate ditulis seed per WL</span></div>
+
+        <div class="field">
+          <label class="lbl" for="seeds">Jumlah seed</label>
+          <input type="text" id="seeds" data-path="seeds" inputmode="decimal" autocomplete="off" placeholder="contoh 1.000">
+          <p class="err" id="err-seeds" role="alert"></p>
+        </div>
+
+        <div class="lbl" id="lbl-rates">Rate manual (pilih yang dipakai untuk menghitung)</div>
+        <div class="rates" role="radiogroup" aria-labelledby="lbl-rates">
+          <div class="rate" id="rate-pasar">
+            <label class="rate-head"><input type="radio" name="basis" value="pasar"><span>Rate pasar</span><span class="pill">Dipakai</span></label>
+            <div class="rate-eq">
+              <input type="text" id="r-pasar-s" data-path="rates.pasar.s" inputmode="decimal" aria-label="Rate pasar: jumlah seed" autocomplete="off">
+              <span>seed =</span>
+              <input type="text" id="r-pasar-w" data-path="rates.pasar.w" inputmode="decimal" aria-label="Rate pasar: nilai WL" autocomplete="off">
+              <span>WL</span>
+            </div>
+            <p class="rate-per" id="per-pasar"></p>
+          </div>
+          <div class="rate" id="rate-jual">
+            <label class="rate-head"><input type="radio" name="basis" value="jual"><span>Rate jual</span><span class="pill">Dipakai</span></label>
+            <div class="rate-eq">
+              <input type="text" id="r-jual-s" data-path="rates.jual.s" inputmode="decimal" aria-label="Rate jual: jumlah seed" autocomplete="off">
+              <span>seed =</span>
+              <input type="text" id="r-jual-w" data-path="rates.jual.w" inputmode="decimal" aria-label="Rate jual: nilai WL" autocomplete="off">
+              <span>WL</span>
+            </div>
+            <p class="rate-per" id="per-jual"></p>
+          </div>
+          <div class="rate" id="rate-beli">
+            <label class="rate-head"><input type="radio" name="basis" value="beli"><span>Rate beli</span><span class="pill">Dipakai</span></label>
+            <div class="rate-eq">
+              <input type="text" id="r-beli-s" data-path="rates.beli.s" inputmode="decimal" aria-label="Rate beli: jumlah seed" autocomplete="off">
+              <span>seed =</span>
+              <input type="text" id="r-beli-w" data-path="rates.beli.w" inputmode="decimal" aria-label="Rate beli: nilai WL" autocomplete="off">
+              <span>WL</span>
+            </div>
+            <p class="rate-per" id="per-beli"></p>
+          </div>
+        </div>
+        <p class="err" id="err-rate" role="alert"></p>
+        <p class="hint">Rate jual untuk seed yang Anda jual, rate beli untuk seed yang Anda beli sebagai modal. Angka awal hanya contoh, ganti sesuai rate hari ini.</p>
+        <div class="row row-gap">
+          <button type="button" class="btn" id="btn-log-rate">Catat rate ke riwayat</button>
+        </div>
+      </section>
+
+      <section class="card" id="adv-card" aria-labelledby="h-adv" hidden>
+        <div class="card-head"><h2 id="h-adv">Biaya dan modal</h2><span class="sub">Hanya dipakai di Mode Lanjutan</span></div>
+        <div class="field">
+          <label class="lbl" for="adv-modal">Modal awal yang dikembalikan dulu (WL)</label>
+          <input type="text" id="adv-modal" data-path="adv.modal" inputmode="decimal" autocomplete="off" placeholder="0">
+          <div class="row row-gap" style="margin-top:8px">
+            <button type="button" class="btn btn-small" id="btn-modal-from-buy">Hitung dari rate beli</button>
+          </div>
+          <p class="hint">Dikembalikan ke kas modal lebih dulu. Laba bersih baru dibagi dari sisanya.</p>
+        </div>
+        <div class="field">
+          <label class="lbl" for="adv-biaya">Biaya operasional (WL)</label>
+          <input type="text" id="adv-biaya" data-path="adv.biaya" inputmode="decimal" autocomplete="off" placeholder="0">
+        </div>
+        <div class="field">
+          <label class="lbl" for="adv-fee">Potongan atau fee jual (%)</label>
+          <input type="text" id="adv-fee" data-path="adv.fee" inputmode="decimal" autocomplete="off" placeholder="0">
+        </div>
+        <p class="err" id="err-adv" role="alert"></p>
+        <p class="hint">Angka awal hanya contoh. Ganti dengan biaya dan modal Anda.</p>
+      </section>
+    </div>
+
+    <section class="card" aria-labelledby="h-alloc">
+      <p class="eyebrow" id="res-eyebrow">Nilai penjualan kotor</p>
+      <div class="hero">
+        <p class="hero-num" id="hero" aria-live="polite">-</p>
+        <p class="hero-sub" id="hero-sub"></p>
+      </div>
+
+      <div class="note" id="note-simple">
+        Angka ini adalah <b>nilai penjualan kotor</b>: hasil konversi seed ke WL, belum dikurangi biaya atau pengembalian modal. Untuk pembagian laba bersih, pakai Mode Lanjutan.
+        <div><button type="button" class="btn btn-small" id="btn-go-adv">Buka Mode Lanjutan</button></div>
+      </div>
+
+      <div id="flow-wrap" hidden>
+        <dl class="flow" id="flow"></dl>
+        <p class="warn" id="flow-warn" hidden></p>
+      </div>
+
+      <div class="card-head" style="margin-bottom:0"><h2 id="h-alloc">Pembagian</h2><span class="sub" id="alloc-base"></span></div>
+      <div class="bar" id="bar" aria-hidden="true">
+        <i style="background:var(--c-modal);width:0"></i><i style="background:var(--c-owner);width:0"></i><i style="background:var(--c-worker);width:0"></i>
+      </div>
+
+      <div class="alloc">
+        <div class="arow">
+          <div class="aname"><span class="dot" style="background:var(--c-modal)"></span><div><b>Modal lagi</b><small>Diputar untuk beli seed</small></div></div>
+          <div class="pctbox"><input type="text" id="p-modal" data-path="pct.modal" inputmode="decimal" aria-label="Persentase modal lagi" autocomplete="off"><span>%</span></div>
+          <div class="amt" id="a-modal">-</div>
+        </div>
+        <div class="arow">
+          <div class="aname"><span class="dot" style="background:var(--c-owner)"></span><div><b>Owner</b><small>Bagian pemilik</small></div></div>
+          <div class="pctbox"><input type="text" id="p-owner" data-path="pct.owner" inputmode="decimal" aria-label="Persentase owner" autocomplete="off"><span>%</span></div>
+          <div class="amt" id="a-owner">-</div>
+        </div>
+        <div class="arow">
+          <div class="aname"><span class="dot" style="background:var(--c-worker)"></span><div><b>Worker</b><small>Bagian pekerja</small></div></div>
+          <div class="pctbox"><input type="text" id="p-worker" data-path="pct.worker" inputmode="decimal" aria-label="Persentase worker" autocomplete="off"><span>%</span></div>
+          <div class="amt" id="a-worker">-</div>
+        </div>
+      </div>
+
+      <div class="cfg">
+        <span class="status neutral" id="pct-status" role="status"></span>
+        <span class="sub" id="cfg-status"></span>
+      </div>
+      <div class="row">
+        <button type="button" class="btn" id="btn-save-cfg">Simpan konfigurasi</button>
+        <button type="button" class="btn" id="btn-load-cfg" hidden>Muat tersimpan</button>
+        <button type="button" class="btn" id="btn-balance">Sisakan ke worker</button>
+      </div>
+
+      <p class="kas" id="kas" hidden></p>
+
+      <hr class="divider">
+      <div class="savebox">
+        <div>
+          <label class="lbl" for="label">Catatan hasil (opsional)</label>
+          <input type="text" id="label" data-path="label" maxlength="80" autocomplete="off" placeholder="contoh: Panen pepper minggu 3">
+        </div>
+        <div class="row">
+          <button type="button" class="btn btn-primary" id="btn-save-calc">Simpan hasil pembagian</button>
+          <button type="button" class="btn" id="btn-copy">Salin ringkasan</button>
+        </div>
+        <p class="hint" id="save-hint"></p>
+      </div>
+    </section>
+  </div>
+
+  <section class="card hist" aria-labelledby="h-hist">
+    <div class="card-head" style="margin-bottom:0"><h2 id="h-hist">Riwayat</h2><span class="sub" id="hist-note"></span></div>
+    <div class="tabs" role="tablist" aria-label="Jenis riwayat">
+      <button type="button" role="tab" id="tab-calcs" aria-selected="true" aria-controls="panel-calcs">Riwayat kalkulasi</button>
+      <button type="button" role="tab" id="tab-rates" aria-selected="false" aria-controls="panel-rates">Riwayat rate pasar</button>
+    </div>
+    <div id="panel-calcs" role="tabpanel" aria-labelledby="tab-calcs"></div>
+    <div id="panel-rates" role="tabpanel" aria-labelledby="tab-rates" hidden></div>
+  </section>
+
+  <p class="foot">1 DL = 100 WL. Semua angka dibulatkan ke 2 desimal, dan sisa pembulatan masuk ke bagian worker supaya total selalu pas.</p>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+'use strict';
+
+// CORE-START
+function parseNum(v){
+  var s=String(v==null?'':v).trim().replace(/\s/g,'');
+  if(!s) return NaN;
+  if(/[^\d.,]/.test(s)) return NaN;
+  if(s.indexOf('.')>-1 && s.indexOf(',')>-1){
+    s=s.replace(/\./g,'').replace(',','.');
+  } else if(s.indexOf(',')>-1){
+    s=/^[1-9]\d{0,2}(,\d{3})+$/.test(s)? s.replace(/,/g,'') : s.replace(',','.');
+  } else if(s.indexOf('.')>-1){
+    if(/^[1-9]\d{0,2}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,'');
+  }
+  var n=Number(s);
+  return isFinite(n)?n:NaN;
+}
+function r2(n){return Math.round((n+Number.EPSILON)*100)/100}
+function optNum(v){return String(v==null?'':v).trim()===''?0:parseNum(v)}
+function computeCore(i){
+  var out={errors:{},gross:null,base:null,alloc:null,perSeed:null,flow:null,pct:{},pctSum:0,pctOk:false,pctBad:false};
+  var seeds=parseNum(i.seeds);
+  if(!(seeds>0)) out.errors.seeds='Isi jumlah seed lebih dari 0.';
+  var rs=parseNum(i.rate.s), rw=parseNum(i.rate.w);
+  if(!(rs>0)||!(rw>=0)) out.errors.rate='Rate belum benar: jumlah seed harus lebih dari 0 dan WL tidak boleh negatif.';
+  var sum=0, bad=false, keys=['modal','owner','worker'];
+  for(var k=0;k<keys.length;k++){
+    var key=keys[k], raw=String(i.pct[key]==null?'':i.pct[key]).trim();
+    var v=raw===''?0:parseNum(raw);
+    if(isNaN(v)||v<0||v>100){bad=true;v=isNaN(v)?0:v;}
+    out.pct[key]=v; sum+=v;
+  }
+  out.pctSum=Math.round(sum*1000)/1000;
+  out.pctBad=bad;
+  out.pctOk=!bad && Math.abs(sum-100)<0.0005;
+  if(!out.errors.seeds && !out.errors.rate){
+    out.perSeed=rw/rs;
+    out.gross=r2(seeds*rw/rs);
+    out.base=out.gross;
+    if(i.mode==='adv'){
+      var m=optNum(i.adv.modal), b=optNum(i.adv.biaya), f=optNum(i.adv.fee);
+      if(isNaN(m)||m<0||isNaN(b)||b<0||isNaN(f)||f<0||f>100){
+        out.errors.adv='Periksa isian biaya: harus angka 0 atau lebih, dan fee paling besar 100%.';
+        out.base=null;
+      } else {
+        var fee=r2(out.gross*f/100);
+        var after=r2(out.gross-fee-b);
+        var returned=r2(Math.max(0,Math.min(m,after)));
+        var net=r2(Math.max(0,after-returned));
+        out.flow={gross:out.gross,feePct:f,fee:fee,biaya:b,after:after,modal:m,returned:returned,
+                  shortfall:r2(Math.max(0,m-Math.max(after,0))),net:net,overCost:after<0};
+        out.base=net;
+      }
+    }
+  }
+  if(out.pctOk && out.base!==null){
+    var a=r2(out.base*out.pct.modal/100), o=r2(out.base*out.pct.owner/100);
+    out.alloc={modal:a,owner:o,worker:r2(Math.max(0,out.base-a-o))};
+  }
+  return out;
+}
+// CORE-END
+
+var KEY='spd.v1';          // draft isian, konfigurasi, dan cadangan riwayat bila API tidak ada
+var PW_KEY='spd.pw';
+var API_URL='/api/history';
+var KEYS=['pasar','jual','beli'];
+var BASIS_NAME={pasar:'pasar',jual:'jual',beli:'beli'};
+var nf=new Intl.NumberFormat('id-ID',{maximumFractionDigits:2});
+var nf4=new Intl.NumberFormat('id-ID',{maximumFractionDigits:4});
+var dtf=new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+var dayf=new Intl.DateTimeFormat('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+function $(id){return document.getElementById(id)}
+function wl(n){return nf.format(n)+' WL'}
+function numStr(n){return String(n).replace('.',',')}
+function dlText(n){
+  if(!(n>=100)) return '';
+  var dl=Math.floor(n/100), rest=r2(n-dl*100);
+  return rest? nf.format(dl)+' DL '+nf.format(rest)+' WL' : nf.format(dl)+' DL';
+}
+function fmtDate(iso){try{return dtf.format(new Date(iso))}catch(e){return ''}}
+function dayLabel(iso){try{return dayf.format(new Date(iso))}catch(e){return ''}}
+function dayKey(iso){var d=new Date(iso); return isNaN(d)?'x':d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+
+var DEFAULTS={
+  seeds:'1.000',
+  rates:{pasar:{s:'200',w:'20'},jual:{s:'200',w:'19'},beli:{s:'200',w:'21'}},
+  basis:'pasar',
+  pct:{modal:'30',owner:'40',worker:'30'},
+  mode:'simple',
+  adv:{modal:'30',biaya:'2',fee:''},
+  label:''
+};
+
+// ----- penyimpanan lokal (draft isian + cadangan bila API tidak tersedia)
+var local={draft:null,config:null,rates:[],calcs:[]};
+try{
+  var raw=localStorage.getItem(KEY);
+  if(raw){var parsed=JSON.parse(raw); if(parsed&&typeof parsed==='object') local=Object.assign(local,parsed);}
+}catch(e){}
+if(!Array.isArray(local.rates)) local.rates=[];
+if(!Array.isArray(local.calcs)) local.calcs=[];
+function writeStore(){try{localStorage.setItem(KEY,JSON.stringify(local))}catch(e){}}
+
+function mergeState(d){
+  var s=JSON.parse(JSON.stringify(DEFAULTS));
+  if(!d||typeof d!=='object') return s;
+  var isStr=function(v){return typeof v==='string'};
+  if(isStr(d.seeds)) s.seeds=d.seeds;
+  KEYS.forEach(function(k){
+    if(d.rates&&d.rates[k]){
+      if(isStr(d.rates[k].s)) s.rates[k].s=d.rates[k].s;
+      if(isStr(d.rates[k].w)) s.rates[k].w=d.rates[k].w;
+    }
+  });
+  if(KEYS.indexOf(d.basis)>-1) s.basis=d.basis;
+  ['modal','owner','worker'].forEach(function(k){if(d.pct&&isStr(d.pct[k])) s.pct[k]=d.pct[k]});
+  if(d.mode==='adv'||d.mode==='simple') s.mode=d.mode;
+  ['modal','biaya','fee'].forEach(function(k){if(d.adv&&isStr(d.adv[k])) s.adv[k]=d.adv[k]});
+  if(isStr(d.label)) s.label=d.label;
+  return s;
+}
+var state=mergeState(local.draft);
+function applyConfig(cfg){
+  ['modal','owner','worker'].forEach(function(k){
+    if(cfg&&typeof cfg[k]==='number') state.pct[k]=numStr(cfg[k]);
+  });
+  syncInputs();
+}
+if(!local.draft && local.config){
+  ['modal','owner','worker'].forEach(function(k){
+    if(typeof local.config[k]==='number') state.pct[k]=numStr(local.config[k]);
+  });
+}
+function persistDraft(){local.draft=state; writeStore()}
+
+// ----- sumber riwayat: GitHub lewat /api/history, atau browser ini bila API tidak ada
+var backend='loading';   // loading | cloud | local | error
+var backendNote='';
+var db={calcs:[],rates:[],config:null};   // data yang tampil di riwayat
+var password='', unlocked=false, busy=false, pwErr='', lastLoad=0;
+var shown={calcs:30,rates:30};
+try{password=sessionStorage.getItem(PW_KEY)||localStorage.getItem(PW_KEY)||''}catch(e){}
+
+function normalize(d){
+  d=d||{};
+  return {
+    calcs:Array.isArray(d.calcs)?d.calcs:[],
+    rates:Array.isArray(d.rates)?d.rates:[],
+    config:(d.config&&typeof d.config==='object')?d.config:null
+  };
+}
+function clearPassword(){
+  password=''; unlocked=false;
+  try{sessionStorage.removeItem(PW_KEY); localStorage.removeItem(PW_KEY)}catch(e){}
+}
+function canEdit(){return backend==='local'||(backend==='cloud'&&unlocked)}
+
+async function api(method,body){
+  var opts={method:method,headers:{}};
+  if(body){opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body);}
+  if(password) opts.headers['x-app-password']=password;
+  var res;
+  try{res=await fetch(API_URL,opts)}catch(e){throw {code:'network',message:'Tidak bisa terhubung ke server.'}}
+  var data=null;
+  try{data=await res.json()}catch(e){}
+  if(!res.ok){
+    throw {status:res.status,code:(data&&data.error)||('http_'+res.status),message:(data&&data.message)||('Server membalas '+res.status+'.')};
+  }
+  return data;
+}
+
+async function loadHistory(silent){
+  if(!silent){backend='loading'; backendNote=''; renderAll();}
+  try{
+    var data=await api('GET');
+    db=normalize(data); backend='cloud'; backendNote=''; lastLoad=Date.now();
+    if(!local.draft && db.config) applyConfig(db.config);
+  }catch(e){
+    if(silent&&backend==='cloud'){toast('Gagal memuat ulang: '+e.message); return;}
+    if(e.status===404||e.code==='network'||e.code==='not_configured'){
+      db=local; backend='local'; backendNote=(e.code==='not_configured')?e.message:'';
+    } else {
+      backend='error'; backendNote=e.message||'';
+    }
+  }
+  renderAll();
+  if(backend==='cloud'&&password&&!unlocked) verifyPassword(true);
+}
+
+async function verifyPassword(silent){
+  try{
+    await api('POST',{action:'verify'});
+    unlocked=true; pwErr='';
+    if(!silent) toast('Mode owner aktif.');
+  }catch(e){
+    unlocked=false;
+    if(e.status===401){clearPassword(); pwErr=silent?'':'Kata sandi salah.';}
+    else pwErr=e.message||'Gagal memeriksa kata sandi.';
+  }
+  renderAll();
+}
+
+function focusUnlock(quiet){
+  var form=$('unlock-form'), pw=$('pw');
+  if(!form||form.hidden) return;
+  pw.scrollIntoView({behavior:'smooth',block:'center'});
+  pw.focus();
+  if(!quiet) toast('Masukkan kata sandi owner dulu.');
+}
+
+// tulis ke GitHub lewat API
+async function mutate(body,okMsg){
+  if(backend!=='cloud') return false;
+  if(!unlocked){focusUnlock(); return false;}
+  busy=true; renderAll();
+  var ok=false, needPw=false;
+  try{
+    var data=await api('POST',body);
+    db=normalize(data); ok=true;
+  }catch(e){
+    if(e.status===401){clearPassword(); pwErr='Kata sandi ditolak. Masukkan lagi.'; needPw=true;}
+    else toast(e.message||'Gagal menyimpan.');
+  }
+  busy=false; renderAll();
+  if(ok) toast(okMsg);
+  if(needPw) focusUnlock(true);
+  return ok;
+}
+
+async function addEntry(kind,entry){
+  if(busy) return;
+  if(backend==='cloud'){
+    await mutate({action:kind==='calcs'?'addCalc':'addRate',entry:entry},kind==='calcs'?'Hasil pembagian disimpan ke GitHub.':'Rate dicatat ke GitHub.');
+  } else if(backend==='local'){
+    entry.id=uid(); entry.t=new Date().toISOString();
+    db[kind].unshift(entry); db[kind]=db[kind].slice(0,300);
+    writeStore(); renderAll();
+    toast(kind==='calcs'?'Hasil pembagian disimpan di browser ini.':'Rate dicatat di browser ini.');
+  }
+}
+async function doDelete(kind,id){
+  if(busy) return;
+  if(backend==='cloud'){
+    await mutate({action:kind==='calcs'?'deleteCalc':'deleteRate',id:id},'Catatan dihapus dari GitHub.');
+  } else if(backend==='local'){
+    db[kind]=db[kind].filter(function(x){return x.id!==id});
+    writeStore(); renderAll(); toast('Catatan dihapus.');
+  }
+}
+async function doClear(kind){
+  if(busy) return;
+  if(backend==='cloud'){
+    await mutate({action:'clear',kind:kind},'Semua riwayat dihapus dari GitHub.');
+  } else if(backend==='local'){
+    db[kind]=[]; writeStore(); renderAll(); toast('Semua riwayat dihapus.');
+  }
+}
+async function saveConfig(){
+  if(busy) return;
+  var res=current(); if(!res.pctOk) return;
+  var cfg={modal:res.pct.modal,owner:res.pct.owner,worker:res.pct.worker};
+  if(backend==='cloud'){
+    await mutate({action:'saveConfig',config:cfg},'Konfigurasi disimpan ke GitHub.');
+  } else if(backend==='local'){
+    db.config=cfg; writeStore(); renderAll(); toast('Konfigurasi persentase disimpan.');
+  }
+}
+
+function getPath(o,p){return p.split('.').reduce(function(c,k){return c[k]},o)}
+function setPath(o,p,v){var k=p.split('.'),c=o;for(var i=0;i<k.length-1;i++)c=c[k[i]];c[k[k.length-1]]=v}
+
+function syncInputs(){
+  document.querySelectorAll('[data-path]').forEach(function(inp){inp.value=getPath(state,inp.dataset.path)});
+  document.querySelectorAll('input[name="basis"]').forEach(function(r){r.checked=(r.value===state.basis)});
+}
+
+function current(){
+  return computeCore({seeds:state.seeds,rate:state.rates[state.basis],pct:state.pct,mode:state.mode,adv:state.adv});
+}
+var last=null;
+
+function mark(el,bad){el.classList.toggle('bad',!!bad); el.setAttribute('aria-invalid',bad?'true':'false')}
+
+// ----- bar status sambungan dan kunci owner
+function renderSync(){
+  var dot=$('sync-dot'), txt=$('sync-text');
+  var cls={loading:'s-load',cloud:unlocked?'s-ok':'s-view',local:'s-local',error:'s-bad'}[backend];
+  dot.className='sync-dot '+cls;
+  var t='';
+  if(backend==='loading') t='Menghubungkan ke GitHub...';
+  else if(backend==='cloud') t=unlocked?'Tersambung ke GitHub. Mode owner: hasil bisa disimpan dan dihapus.':'Tersambung ke GitHub. Mode lihat saja: masukkan kata sandi owner untuk menyimpan.';
+  else if(backend==='local') t='Riwayat hanya tersimpan di browser ini. '+(backendNote||'Penyimpanan GitHub belum terhubung.');
+  else t='Gagal memuat riwayat dari GitHub. '+backendNote;
+  txt.textContent=t;
+  $('unlock-form').hidden=!(backend==='cloud'&&!unlocked);
+  $('btn-lock').hidden=!(backend==='cloud'&&unlocked);
+  var rf=$('btn-refresh');
+  rf.hidden=!(backend==='cloud'||backend==='error');
+  rf.textContent=backend==='error'?'Coba lagi':'Muat ulang';
+  $('pw-err').textContent=pwErr;
+  $('hist-note').textContent=backend==='cloud'?'Tersimpan di GitHub':(backend==='local'?'Tersimpan di browser ini saja':'');
+}
+
+function render(){
+  var res=current(); last=res;
+  var adv=state.mode==='adv';
+  document.querySelectorAll('[data-mode]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.mode===state.mode))});
+  $('adv-card').hidden=!adv;
+  $('note-simple').hidden=adv;
+  $('flow-wrap').hidden=!adv;
+
+  // rates
+  KEYS.forEach(function(k){
+    var r=state.rates[k], s=parseNum(r.s), w=parseNum(r.w), ok=s>0&&w>=0;
+    $('per-'+k).textContent=ok? nf4.format(w/s)+' WL per seed, atau '+nf.format(w/s*100)+' WL per 100 seed' : 'Isi rate dengan angka. Jumlah seed harus lebih dari 0.';
+    $('rate-'+k).classList.toggle('on',state.basis===k);
+    mark($('r-'+k+'-s'), r.s.trim()!=='' && !(s>0));
+    mark($('r-'+k+'-w'), r.w.trim()!=='' && !(w>=0));
+  });
+  var seedsTxt=state.seeds.trim();
+  $('err-seeds').textContent=(seedsTxt!==''&&res.errors.seeds)?res.errors.seeds:'';
+  mark($('seeds'), seedsTxt!==''&&!!res.errors.seeds);
+  $('err-rate').textContent=res.errors.rate||'';
+  $('err-adv').textContent=adv&&res.errors.adv?res.errors.adv:'';
+
+  // hero
+  var seeds=parseNum(state.seeds);
+  var f=res.flow;
+  if(res.gross===null){
+    $('res-eyebrow').textContent=adv?'Laba bersih yang dibagi':'Nilai penjualan kotor';
+    $('hero').textContent='-';
+    $('hero-sub').textContent='Isi jumlah seed dan rate untuk melihat hasil.';
+  } else if(!adv){
+    $('res-eyebrow').textContent='Nilai penjualan kotor';
+    $('hero').textContent=wl(res.gross);
+    var dl=dlText(res.gross);
+    $('hero-sub').textContent=nf.format(seeds)+' seed x '+nf4.format(res.perSeed)+' WL per seed (rate '+BASIS_NAME[state.basis]+')'+(dl?', setara '+dl:'');
+  } else if(res.base===null){
+    $('res-eyebrow').textContent='Laba bersih yang dibagi';
+    $('hero').textContent='-';
+    $('hero-sub').textContent='Periksa isian biaya dan modal.';
+  } else {
+    $('res-eyebrow').textContent='Laba bersih yang dibagi';
+    $('hero').textContent=wl(f.net);
+    $('hero-sub').textContent='Dari penjualan kotor '+wl(f.gross)+' setelah fee, biaya, dan pengembalian modal.';
+  }
+
+  // waterfall
+  var flow=$('flow'); flow.textContent='';
+  var warn=$('flow-warn'); warn.hidden=true;
+  if(adv&&f){
+    var rows=[
+      ['Penjualan kotor',wl(f.gross),f.gross===0,false],
+      ['Fee jual ('+nf.format(f.feePct)+'%)','- '+wl(f.fee),f.fee===0,false],
+      ['Biaya operasional','- '+wl(f.biaya),f.biaya===0,false],
+      ['Setelah biaya',wl(f.after),false,false],
+      ['Pengembalian modal','- '+wl(f.returned),f.returned===0,false],
+      ['Laba bersih',wl(f.net),false,true]
+    ];
+    rows.forEach(function(r){
+      var d=document.createElement('div');
+      if(r[2]) d.className='zero';
+      if(r[3]) d.className=(d.className+' total').trim();
+      var dt=document.createElement('dt'); dt.textContent=r[0];
+      var dd=document.createElement('dd'); dd.textContent=r[1];
+      d.append(dt,dd); flow.append(d);
+    });
+    if(f.overCost){warn.hidden=false; warn.textContent='Biaya melebihi hasil penjualan. Tidak ada laba untuk dibagi.';}
+    else if(f.shortfall>0){warn.hidden=false; warn.textContent='Modal belum kembali penuh, masih kurang '+wl(f.shortfall)+'. Tidak ada laba untuk dibagi.';}
+  }
+
+  // allocation
+  $('h-alloc').textContent=adv?'Pembagian laba bersih':'Pembagian nilai kotor';
+  $('alloc-base').textContent=res.base!==null?'Dasar pembagian '+wl(res.base):'';
+  ['modal','owner','worker'].forEach(function(k){
+    $('a-'+k).textContent=res.alloc?wl(res.alloc[k]):'-';
+    var t=state.pct[k].trim();
+    var v=t===''?0:parseNum(t);
+    mark($('p-'+k), isNaN(v)||v<0||v>100);
+  });
+  var sum=res.pctSum, scale=Math.max(sum,100);
+  var segs=$('bar').children;
+  ['modal','owner','worker'].forEach(function(k,i){segs[i].style.width=(res.pct[k]/scale*100)+'%'});
+
+  var st=$('pct-status');
+  if(res.pctBad){st.className='status bad'; st.textContent='Persentase harus angka 0 sampai 100';}
+  else if(res.pctOk){st.className='status good'; st.textContent='Total '+nf.format(sum)+'%, sudah 100%';}
+  else if(sum<100){st.className='status bad'; st.textContent='Total '+nf.format(sum)+'%, kurang '+nf.format(r2(100-sum))+'%';}
+  else {st.className='status bad'; st.textContent='Total '+nf.format(sum)+'%, lebih '+nf.format(r2(sum-100))+'%';}
+
+  // config status
+  var cfg=db.config, same=false;
+  if(cfg){
+    same=['modal','owner','worker'].every(function(k){return Math.abs((res.pct[k])-cfg[k])<1e-9});
+  }
+  var ready=(backend==='cloud'||backend==='local');
+  $('cfg-status').textContent=backend==='loading'?'Memuat konfigurasi...':(!cfg?'Belum ada konfigurasi tersimpan':(same?'Konfigurasi tersimpan'+(backend==='cloud'?' di GitHub':''):'Perubahan belum disimpan'));
+  $('btn-load-cfg').hidden=!(cfg&&!same);
+  $('btn-save-cfg').disabled=!res.pctOk||!ready||busy;
+  $('btn-log-rate').disabled=!ready||busy;
+  var okSum=!res.pctBad && Math.abs(sum-100)<0.0005;
+  var m=parseNum(state.pct.modal), o=parseNum(state.pct.owner);
+  var canBal=!isNaN(m)&&!isNaN(o)&&m>=0&&o>=0&&m+o<=100;
+  $('btn-balance').disabled=!canBal||okSum&&Math.abs(parseNum(state.pct.worker)-(100-m-o))<0.0005;
+
+  // capital cash
+  var kas=$('kas');
+  if(adv&&f&&res.alloc){
+    kas.hidden=false; kas.textContent='';
+    var b=document.createElement('b'); b.textContent=wl(r2(f.returned+res.alloc.modal));
+    kas.append('Modal siap diputar lagi: ',b,' ('+wl(f.returned)+' pengembalian modal + '+wl(res.alloc.modal)+' modal lagi)');
+  } else kas.hidden=true;
+
+  // save
+  var can=!!res.alloc;
+  $('btn-save-calc').disabled=!can||!ready||busy;
+  $('btn-copy').disabled=!can;
+  var hint='';
+  if(!can) hint=res.pctOk?'Lengkapi jumlah seed dan rate untuk menyimpan.':'Total persentase harus tepat 100% sebelum hasil bisa disimpan.';
+  else if(backend==='loading') hint='Menunggu sambungan ke GitHub...';
+  else if(backend==='error') hint='Penyimpanan GitHub belum bisa dipakai. Coba muat ulang.';
+  else if(backend==='cloud'&&!unlocked) hint='Buka kunci owner di bagian atas halaman untuk menyimpan ke GitHub.';
+  $('save-hint').textContent=hint;
+}
+
+function renderAll(){renderSync(); render(); renderCalcs(); renderRates(); renderTabs();}
+
+// ----- inputs
+document.querySelectorAll('[data-path]').forEach(function(inp){
+  inp.addEventListener('input',function(){setPath(state,inp.dataset.path,inp.value); persistDraft(); render();});
+});
+$('seeds').addEventListener('blur',function(){
+  var n=parseNum(this.value);
+  if(n>0){this.value=nf.format(n); state.seeds=this.value; persistDraft(); render();}
+});
+document.querySelectorAll('input[name="basis"]').forEach(function(r){
+  r.addEventListener('change',function(){if(r.checked){state.basis=r.value; persistDraft(); render();}});
+});
+document.querySelectorAll('[data-mode]').forEach(function(b){
+  b.addEventListener('click',function(){state.mode=b.dataset.mode; persistDraft(); render();});
+});
+$('btn-go-adv').addEventListener('click',function(){state.mode='adv'; persistDraft(); render();});
+
+$('btn-balance').addEventListener('click',function(){
+  var m=parseNum(state.pct.modal), o=parseNum(state.pct.owner);
+  if(isNaN(m)||isNaN(o)||m+o>100) return;
+  state.pct.worker=numStr(Math.round((100-m-o)*1000)/1000);
+  $('p-worker').value=state.pct.worker; persistDraft(); render();
+});
+$('btn-save-cfg').addEventListener('click',saveConfig);
+$('btn-load-cfg').addEventListener('click',function(){
+  if(!db.config) return;
+  ['modal','owner','worker'].forEach(function(k){state.pct[k]=numStr(db.config[k])});
+  syncInputs(); persistDraft(); render(); toast('Konfigurasi tersimpan dimuat.');
+});
+$('btn-modal-from-buy').addEventListener('click',function(){
+  var seeds=parseNum(state.seeds), r=state.rates.beli, s=parseNum(r.s), w=parseNum(r.w);
+  if(!(seeds>0)||!(s>0)||!(w>=0)){toast('Isi jumlah seed dan rate beli dengan benar dulu.'); return;}
+  state.adv.modal=numStr(r2(seeds*w/s));
+  $('adv-modal').value=state.adv.modal; persistDraft(); render();
+  toast('Modal dihitung dari rate beli.');
+});
+
+// ----- kunci owner
+$('unlock-form').addEventListener('submit',function(ev){
+  ev.preventDefault();
+  var v=$('pw').value;
+  if(!v){pwErr='Isi kata sandi owner.'; renderSync(); return;}
+  password=v; pwErr='';
+  try{
+    var store=$('pw-remember').checked?localStorage:sessionStorage;
+    store.setItem(PW_KEY,v);
+  }catch(e){}
+  $('pw').value='';
+  verifyPassword(false);
+});
+$('btn-lock').addEventListener('click',function(){clearPassword(); pwErr=''; renderAll(); toast('Terkunci. Sekarang mode lihat saja.');});
+$('btn-refresh').addEventListener('click',function(){loadHistory(backend==='cloud');});
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden&&backend==='cloud'&&!busy&&Date.now()-lastLoad>20000){loadHistory(true);}
+});
+
+// ----- toast
+var toastTimer=null;
+function toast(msg){
+  var t=$('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(function(){t.classList.remove('show')},2800);
+}
+
+// ----- element helper
+function h(tag,attrs){
+  var e=document.createElement(tag);
+  if(attrs) Object.keys(attrs).forEach(function(k){
+    var v=attrs[k];
+    if(k==='class') e.className=v;
+    else if(k==='text') e.textContent=v;
+    else if(k.indexOf('on')===0) e.addEventListener(k.slice(2),v);
+    else e.setAttribute(k,v);
+  });
+  for(var i=2;i<arguments.length;i++){
+    var c=arguments[i];
+    if(c==null||c===false) continue;
+    e.append(c.nodeType?c:document.createTextNode(c));
+  }
+  return e;
+}
+
+// ----- ringkasan teks
+function summaryText(res){
+  var rt=state.rates[state.basis];
+  var lines=['Pembagian seed - '+fmtDate(new Date().toISOString()),
+    nf.format(parseNum(state.seeds))+' seed, '+rt.s+' seed = '+rt.w+' WL (rate '+BASIS_NAME[state.basis]+')',
+    'Nilai penjualan kotor: '+wl(res.gross)];
+  if(res.flow){
+    lines.push('Fee jual: -'+wl(res.flow.fee),'Biaya operasional: -'+wl(res.flow.biaya),'Pengembalian modal: -'+wl(res.flow.returned),'Laba bersih: '+wl(res.flow.net));
+  }
+  lines.push('Modal lagi ('+nf.format(res.pct.modal)+'%): '+wl(res.alloc.modal),
+    'Owner ('+nf.format(res.pct.owner)+'%): '+wl(res.alloc.owner),
+    'Worker ('+nf.format(res.pct.worker)+'%): '+wl(res.alloc.worker));
+  return lines.join('\n');
+}
+$('btn-copy').addEventListener('click',function(){
+  var res=current(); if(!res.alloc) return;
+  var text=summaryText(res);
+  function fallback(){
+    var ta=document.createElement('textarea'); ta.value=text; ta.setAttribute('readonly','');
+    ta.style.position='fixed'; ta.style.opacity='0'; document.body.append(ta); ta.select();
+    var ok=false; try{ok=document.execCommand('copy')}catch(e){}
+    ta.remove(); toast(ok?'Ringkasan disalin.':'Salin otomatis tidak didukung di sini.');
+  }
+  try{
+    navigator.clipboard.writeText(text).then(function(){toast('Ringkasan disalin.')},fallback);
+  }catch(e){fallback()}
+});
+
+// ----- simpan hasil dan catat rate
+$('btn-save-calc').addEventListener('click',function(){
+  var res=current();
+  if(!res.alloc){toast('Lengkapi input dan pastikan total persentase 100%.'); return;}
+  var rt=state.rates[state.basis];
+  addEntry('calcs',{
+    label:state.label.trim().slice(0,80), mode:state.mode,
+    seeds:parseNum(state.seeds), basis:state.basis, rate:{s:parseNum(rt.s),w:parseNum(rt.w)},
+    gross:res.gross, base:res.base,
+    flow:res.flow?{modal:res.flow.modal,biaya:res.flow.biaya,feePct:res.flow.feePct,fee:res.flow.fee,returned:res.flow.returned,net:res.flow.net}:null,
+    pct:{modal:res.pct.modal,owner:res.pct.owner,worker:res.pct.worker},
+    alloc:{modal:res.alloc.modal,owner:res.alloc.owner,worker:res.alloc.worker}
+  });
+});
+function readRate(k){var r=state.rates[k],s=parseNum(r.s),w=parseNum(r.w);return(s>0&&w>=0)?{s:s,w:w}:null}
+$('btn-log-rate').addEventListener('click',function(){
+  var p=readRate('pasar');
+  if(!p){toast('Isi rate pasar dengan benar dulu.'); return;}
+  addEntry('rates',{pasar:p,jual:readRate('jual'),beli:readRate('beli')});
+});
+
+// ----- riwayat: tab
+var activeTab='calcs';
+function renderTabs(){
+  var loading=backend==='loading';
+  $('tab-calcs').textContent='Riwayat kalkulasi'+(loading?'':' ('+db.calcs.length+')');
+  $('tab-rates').textContent='Riwayat rate pasar'+(loading?'':' ('+db.rates.length+')');
+  ['calcs','rates'].forEach(function(k){
+    $('tab-'+k).setAttribute('aria-selected',String(activeTab===k));
+    $('panel-'+k).hidden=activeTab!==k;
+  });
+}
+['calcs','rates'].forEach(function(k){
+  $('tab-'+k).addEventListener('click',function(){activeTab=k; renderTabs();});
+});
+
+function clearButton(label,onConfirm){
+  var armed=false, timer=null;
+  var b=h('button',{type:'button',class:'btn btn-small btn-danger',text:label});
+  b.addEventListener('click',function(){
+    if(!armed){
+      armed=true; b.textContent='Klik lagi untuk hapus semua';
+      timer=setTimeout(function(){armed=false; b.textContent=label},3000);
+    } else {clearTimeout(timer); onConfirm();}
+  });
+  return b;
+}
+
+// kembalikan true bila panel sudah diisi pesan status (memuat atau gagal)
+function statusPanel(box){
+  if(backend==='loading'){box.append(h('div',{class:'empty',text:'Memuat riwayat dari GitHub...'})); return true;}
+  if(backend==='error'){box.append(h('div',{class:'empty',text:'Riwayat belum bisa dimuat. '+backendNote})); return true;}
+  return false;
+}
+
+function groupByDay(items){
+  var groups=[], map={};
+  items.forEach(function(e){
+    var k=dayKey(e.t);
+    if(!map[k]){map[k]={label:dayLabel(e.t),items:[]}; groups.push(map[k]);}
+    map[k].items.push(e);
+  });
+  return groups;
+}
+
+function renderGrouped(box,kind,makeEntry,clearLabel,clearMsg){
+  var items=db[kind];
+  var n=Math.min(items.length,shown[kind]);
+  groupByDay(items.slice(0,n)).forEach(function(g){
+    box.append(h('div',{class:'day'},h('h3',{text:g.label}),h('span',{class:'sub',text:g.items.length+' catatan'})));
+    var list=h('div',{class:'list'});
+    g.items.forEach(function(e){list.append(makeEntry(e))});
+    box.append(list);
+  });
+  if(items.length>n){
+    box.append(h('div',{class:'row row-gap'},h('button',{type:'button',class:'btn btn-small',text:'Tampilkan lebih banyak ('+(items.length-n)+' lagi)',onclick:function(){shown[kind]+=30; renderAll();}})));
+  }
+  if(canEdit()){
+    box.append(h('div',{class:'row row-gap'},clearButton(clearLabel,function(){doClear(kind)})));
+  }
+}
+
+// ----- riwayat kalkulasi
+var COLORS={modal:'var(--c-modal)',owner:'var(--c-owner)',worker:'var(--c-worker)'};
+var LABELS={modal:'Modal lagi',owner:'Owner',worker:'Worker'};
+function renderCalcs(){
+  var box=$('panel-calcs'); box.textContent='';
+  if(statusPanel(box)) return;
+  if(!db.calcs.length){
+    box.append(h('div',{class:'empty',text:'Belum ada hasil tersimpan. Atur seed dan persentase, lalu tekan Simpan hasil pembagian.'}));
+    return;
+  }
+  var tot={modal:0,owner:0,worker:0};
+  db.calcs.forEach(function(e){['modal','owner','worker'].forEach(function(k){tot[k]+=e.alloc[k]})});
+  var totals=h('div',{class:'totals'});
+  ['modal','owner','worker'].forEach(function(k){
+    totals.append(h('div',{class:'tot'},h('span',{class:'sub',text:'Total '+LABELS[k]+' ('+db.calcs.length+' catatan)'}),h('b',{text:wl(r2(tot[k]))})));
+  });
+  box.append(totals);
+  renderGrouped(box,'calcs',function(e){
+    var rate=nf.format(e.rate.s)+' seed = '+nf.format(e.rate.w)+' WL ('+BASIS_NAME[e.basis]+')';
+    var line=nf.format(e.seeds)+' seed, '+rate+', kotor '+wl(e.gross)+(e.flow?', laba bersih '+wl(e.flow.net):'');
+    var chips=h('div',{class:'chips'});
+    ['modal','owner','worker'].forEach(function(k){
+      chips.append(h('span',{class:'chip'},h('span',{class:'dot',style:'background:'+COLORS[k]}),LABELS[k]+' '+nf.format(e.pct[k])+'%: '+wl(e.alloc[k])));
+    });
+    return h('div',{class:'entry'},
+      h('div',{class:'entry-top'},
+        h('span',{class:'entry-title',text:e.label||'Tanpa catatan'}),
+        h('time',{class:'entry-date',datetime:e.t,text:fmtDate(e.t)})),
+      h('div',{class:'row'},h('span',{class:'tag',text:e.mode==='adv'?'Lanjutan':'Sederhana'})),
+      h('div',{class:'entry-line',text:line}),
+      chips,
+      h('div',{class:'row'},
+        h('button',{type:'button',class:'btn btn-small',text:'Muat ulang ke formulir',onclick:function(){loadCalc(e)}}),
+        canEdit()&&h('button',{type:'button',class:'btn btn-small btn-danger',text:'Hapus',onclick:function(){doDelete('calcs',e.id)}})));
+  },'Hapus semua riwayat kalkulasi');
+}
+function loadCalc(e){
+  state.seeds=nf.format(e.seeds);
+  if(KEYS.indexOf(e.basis)>-1){
+    state.basis=e.basis; state.rates[e.basis]={s:numStr(e.rate.s),w:numStr(e.rate.w)};
+  }
+  ['modal','owner','worker'].forEach(function(k){state.pct[k]=numStr(e.pct[k])});
+  state.mode=e.mode==='adv'?'adv':'simple';
+  if(e.flow){state.adv={modal:numStr(e.flow.modal),biaya:numStr(e.flow.biaya),fee:e.flow.feePct?numStr(e.flow.feePct):''};}
+  state.label=e.label||'';
+  syncInputs(); persistDraft(); render(); toast('Kalkulasi dimuat ke formulir.');
+}
+
+// ----- riwayat rate
+function perSeed(r){return r.w/r.s}
+function renderRates(){
+  var box=$('panel-rates'); box.textContent='';
+  if(statusPanel(box)) return;
+  if(!db.rates.length){
+    box.append(h('div',{class:'empty',text:'Belum ada rate tercatat. Tekan Catat rate ke riwayat untuk mulai melacak perubahan rate pasar.'}));
+    return;
+  }
+  renderGrouped(box,'rates',function(e){
+    var idx=db.rates.indexOf(e), older=db.rates[idx+1], delta=null;
+    if(older&&perSeed(older.pasar)>0) delta=perSeed(e.pasar)/perSeed(older.pasar)-1;
+    var deltaEl=null;
+    if(delta!==null){
+      if(Math.abs(delta)<1e-9) deltaEl=h('span',{class:'sub',text:'Tetap dibanding catatan sebelumnya'});
+      else deltaEl=h('span',{class:delta>0?'delta-up':'delta-down',text:(delta>0?'Naik ':'Turun ')+nf.format(Math.abs(delta*100))+'% dibanding catatan sebelumnya'});
+    }
+    var extra=[];
+    if(e.jual) extra.push('Jual '+nf.format(e.jual.s)+' seed = '+nf.format(e.jual.w)+' WL');
+    if(e.beli) extra.push('Beli '+nf.format(e.beli.s)+' seed = '+nf.format(e.beli.w)+' WL');
+    return h('div',{class:'entry'},
+      h('div',{class:'entry-top'},
+        h('span',{class:'entry-title',text:'Pasar '+nf.format(e.pasar.s)+' seed = '+nf.format(e.pasar.w)+' WL'}),
+        h('time',{class:'entry-date',datetime:e.t,text:fmtDate(e.t)})),
+      h('div',{class:'entry-line',text:nf.format(perSeed(e.pasar)*100)+' WL per 100 seed'+(extra.length?'. '+extra.join('. '):'')}),
+      deltaEl,
+      h('div',{class:'row'},
+        h('button',{type:'button',class:'btn btn-small',text:'Pakai rate ini',onclick:function(){useRate(e)}}),
+        canEdit()&&h('button',{type:'button',class:'btn btn-small btn-danger',text:'Hapus',onclick:function(){doDelete('rates',e.id)}})));
+  },'Hapus semua riwayat rate');
+}
+function useRate(e){
+  state.rates.pasar={s:numStr(e.pasar.s),w:numStr(e.pasar.w)};
+  if(e.jual) state.rates.jual={s:numStr(e.jual.s),w:numStr(e.jual.w)};
+  if(e.beli) state.rates.beli={s:numStr(e.beli.s),w:numStr(e.beli.w)};
+  syncInputs(); persistDraft(); render(); toast('Rate dimuat ke formulir.');
+}
+
+// ----- boot
+syncInputs(); renderAll(); loadHistory(false);
+})();
+</script>
+</body>
+</html>
